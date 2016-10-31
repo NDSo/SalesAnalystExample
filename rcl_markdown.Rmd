@@ -1,0 +1,113 @@
+---
+title: "NHTSA Reported Recall History"
+author: "Nicholas Shrefler"
+date: "October 5, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Recall Information
+
+The RECALL file contains all NHTSA safety-related defect and compliance 
+campaigns since 1967.
+
+Data was subsetted to include only makes of interest.
+
+```{r include=FALSE}
+
+library(ggplot2)
+
+#retrieve data
+flat_rcl_url <- "http://www-odi.nhtsa.dot.gov/downloads/folders/Recalls/FLAT_RCL.zip"
+temp <- tempfile()
+download.file(flat_rcl_url, temp)
+unzip(temp, "FLAT_RCL.txt")
+flat_rcl <- read.delim("FLAT_RCL.txt", header=FALSE)
+unlink(temp)
+  
+rcl_url <- "http://www-odi.nhtsa.dot.gov/downloads/folders/Recalls/RCL.txt"
+temp <- tempfile()
+download.file(rcl_url, temp)
+rcl_info <- scan(temp, skip = 25, sep = "", what = list(id="", header=""), flush = TRUE)
+rcl_headers <- rcl_info$header[-2]
+unlink(temp)
+```
+
+
+```{r include=FALSE}
+
+#assign column names and type
+colnames(flat_rcl) <- rcl_headers
+flat_rcl$POTAFF <- as.numeric(flat_rcl$POTAFF)
+flat_rcl$BGMAN <- as.Date(flat_rcl$BGMAN, "%Y%m%d")
+flat_rcl$ENDMAN <- as.Date(flat_rcl$ENDMAN, "%Y%m%d")
+flat_rcl$ODATE <- as.Date(flat_rcl$ODATE, "%Y%m%d")
+flat_rcl$RCDATE <- as.Date(flat_rcl$RCDATE, "%Y%m%d")
+flat_rcl$DATEA <- as.Date(flat_rcl$DATEA, "%Y%m%d")
+
+#subset for relevant makes
+dt_makes <- c("BMW", "VOLKSWAGEN", "VOLVO", "SUBARU", "MERCEDES BENZ", "HYUNDA", "MINI", "SAAB", "MOPAR", "INFINITI", "HONDA",
+              "TOYOTA", "LEXUS", "KIA", "JAGUAR", "NISSAN", "MAZDA", "PORSCHE", "AUDI", "LAND ROVER", "ACURA")
+subset_rcl <- flat_rcl[flat_rcl$MAKETXT %in% dt_makes, ]
+
+#Delete duplicates by unique Campaign Number and Make
+de_duped_subset_rcl <- subset_rcl[!duplicated(subset_rcl[,c("CAMPNO", "MAKETXT")]),]
+
+#used for plotting, should have no need for this
+years <- levels(as.factor(format(de_duped_subset_rcl$RCDATE, "%Y")))
+```
+
+```{r include=FALSE}
+
+# 5 year bins ALL
+require(scales)
+n= 3
+all_agg <- aggregate(de_duped_subset_rcl$POTAFF, by=list(RCDATE = format(de_duped_subset_rcl$RCDATE, "%Y")), FUN=sum, na.rm=TRUE)
+names(all_agg)[names(all_agg)=="x"] <- "POTAFF"
+all_agg$MYDATE <- rep( all_agg$RCDATE[seq(1, length(all_agg$RCDATE), n)] , each=n)
+plot_agg_five <- ggplot(all_agg, aes(as.Date(MYDATE, "%Y"), POTAFF)) +
+    geom_bar(stat = "identity") +
+    scale_x_date(date_labels = "%Y", date_breaks = "6 years") + xlab("Year Reported to NHTSA") + ylab("Potentially Affected Units")+
+    scale_y_continuous(labels = comma)
+
+#Aggregated and plot ALL
+make_agg <- aggregate(de_duped_subset_rcl$POTAFF, by=list(RCDATE = format(de_duped_subset_rcl$RCDATE, "%Y"), MAKETXT = de_duped_subset_rcl$MAKETXT), FUN=sum, na.rm=TRUE)
+names(make_agg)[names(make_agg)=="x"] <- "POTAFF"
+plot_agg <- ggplot(make_agg, aes(as.Date(RCDATE, "%Y"), POTAFF, fill=MAKETXT)) +
+            geom_bar(stat = "identity") +
+            scale_x_date(date_labels = "%Y", date_breaks = "6 years") + xlab("Year Reported to NHTSA") + ylab("Potentially Affected Units")
+
+# Bar plots of POTAFF by Year for each manufacturer
+plot_all_wrap <- ggplot(de_duped_subset_rcl, aes(format(RCDATE, "%Y"), POTAFF, group= MAKETXT, fill=MAKETXT))+
+    geom_bar(stat = "identity")+
+    facet_wrap( ~ MAKETXT)+
+    scale_x_discrete(breaks= years[seq(1, length(years),20)]) + xlab("Year Reported to NHTSA") + ylab("Potentially Affected Units")
+
+
+```
+
+
+# Total Reported Recalls per Three Year Interval
+
+```{r echo=FALSE}
+plot_agg_five
+```
+
+
+# Total Reported Recalls per One Year Interval
+
+```{r echo=FALSE}
+plot_agg
+```
+
+
+# Reported Recalls per One Year Interval by Make
+
+```{r echo=FALSE}
+plot_all_wrap
+```
+
+
